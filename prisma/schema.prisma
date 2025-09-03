@@ -1,0 +1,83 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+  HOST
+}
+
+enum PropStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String?
+  dob       DateTime?
+  role      Role       @default(USER)
+  createdAt DateTime   @default(now())
+
+  // relations
+  properties Property[]  @relation("HostProperties")
+  bookings   Booking[]   @relation("GuestBookings")
+}
+
+model Property {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  city        String
+  address      String?   
+  lat         Float
+  lng         Float
+  status      PropStatus  @default(DRAFT)
+  createdAt   DateTime    @default(now())
+  nightlyPrice Int
+
+  // relations
+  host    User     @relation("HostProperties", fields: [hostId], references: [id], onDelete: Cascade)
+  hostId  String
+  bookings Booking[]
+
+  @@index([city])
+  @@index([lat, lng])
+  @@index([status])
+}
+
+model Booking {
+  id         String        @id @default(cuid())
+  startDate  DateTime
+  endDate    DateTime
+  status     BookingStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+
+  // relations
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId String
+
+  guest      User     @relation("GuestBookings", fields: [guestId], references: [id], onDelete: Cascade)
+  guestId    String
+
+  @@index([propertyId])
+  @@index([guestId])
+  @@index([status])
+}
