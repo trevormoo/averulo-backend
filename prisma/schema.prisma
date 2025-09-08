@@ -23,9 +23,9 @@ enum PropStatus {
 
 enum BookingStatus {
   PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
+  APPROVED
+  REJECTED
+  CANCELLED  
 }
 
 model User {
@@ -64,20 +64,39 @@ model Property {
 }
 
 model Booking {
-  id         String        @id @default(cuid())
-  startDate  DateTime
-  endDate    DateTime
-  status     BookingStatus @default(PENDING)
-  createdAt  DateTime      @default(now())
+  id          String        @id @default(cuid())
+  startDate   DateTime
+  endDate     DateTime
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
 
   // relations
-  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  propertyId String
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId  String
+  guest       User      @relation("GuestBookings", fields: [guestId], references: [id], onDelete: Cascade)
+  guestId     String
 
-  guest      User     @relation("GuestBookings", fields: [guestId], references: [id], onDelete: Cascade)
-  guestId    String
+  amount        Int?      // kobo (e.g. ₦50,000 => 5,000,000)
+  currency      String?   // "NGN"
+  paymentRef    String?   @unique
+  paymentStatus String?   // "INITIATED" | "SUCCESS" | "FAILED"
+
+  payments    Payment[]   // optional history records
 
   @@index([propertyId])
   @@index([guestId])
   @@index([status])
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  booking    Booking  @relation(fields: [bookingId], references: [id])
+  bookingId  String
+
+  reference  String   @unique
+  amount     Int
+  currency   String
+  status     String   // e.g. "SUCCESS" | "FAILED"
+  raw        Json?
+  createdAt  DateTime @default(now())
 }

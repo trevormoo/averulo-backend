@@ -9,31 +9,28 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
-import nodemailer from "nodemailer";
 
 import { auth } from "./lib/auth.js";
+import { transporterOrNull } from "./lib/mailer.js";
 import { prisma } from "./lib/prisma.js";
+
 import authRoutes from "./routes/auth.js";
-import bookingsRouter from './routes/bookings.js';
+import bookingsRouter from "./routes/bookings.js";
+import paymentsRouter, { paystackWebhook } from "./routes/payments.js";
 import propertiesRouter from "./routes/properties.js";
-// import bookingsRouter from "./routes/bookings.js"; // uncomment when this file exists
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 const isDev = process.env.APP_ENV !== "production";
 
-// ✅ helpers so routes can use “authRequired”
-const authRequired = auth(true);
-// const authOptional = auth(false); // use if you need optional auth
+// ✅ Mount webhook FIRST so req.body is RAW (Buffer) for HMAC check
+app.post(
+  "/api/payments/webhook/paystack",
+  express.raw({ type: "application/json" }),
+  paystackWebhook
+);
 
-const otpLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: 20,
-  standardHeaders: "draft-7",
-  legacyHeaders: false,
-});
-
-// --- middleware
+// ——— Rest of middleware (safe AFTER webhook) ———
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN?.split(",") || "*",
@@ -47,7 +44,7 @@ app.use(express.json());
 const uploadsDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// multer (10MB per file, only images/pdf)
+// uploads
 const upload = multer({
   dest: "uploads/",
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -60,13 +57,16 @@ const upload = multer({
 // simple health
 app.get("/api/test", (_req, res) => res.json({ message: "Backend is reachable!" }));
 
-// 🔐 current user
+// auth helper
+const authRequired = auth(true);
+
+// current user
 app.get("/api/me", authRequired, async (req, res) => {
   const me = await prisma.user.findUnique({ where: { id: req.user.sub } });
   res.json(me);
 });
 
-// --- ID upload (front/back)
+// ID upload
 app.post(
   "/api/upload-id",
   upload.fields([
@@ -83,21 +83,16 @@ app.post(
   }
 );
 
-// --- OTP (in-memory)
+// OTP store
+const otpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+});
 const otpStore = Object.create(null);
 
-const transporterOrNull = (() => {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 465),
-      secure: String(process.env.SMTP_SECURE || "true") === "true",
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-  }
-  return null;
-})();
-
+// send OTP
 app.post("/api/send-otp", otpLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ success: false, message: "Email is required" });
@@ -125,6 +120,7 @@ app.post("/api/send-otp", otpLimiter, async (req, res) => {
   }
 });
 
+// verify OTP
 app.post("/api/verify-otp", otpLimiter, async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) return res.status(400).json({ success: false, message: "Missing email or otp" });
@@ -140,9 +136,7 @@ app.post("/api/verify-otp", otpLimiter, async (req, res) => {
   delete otpStore[email];
 
   let user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    user = await prisma.user.create({ data: { email, role: "USER" } });
-  }
+  if (!user) user = await prisma.user.create({ data: { email, role: "USER" } });
 
   const token = jwt.sign(
     { sub: user.id, email: user.email, role: user.role },
@@ -156,7 +150,8 @@ app.post("/api/verify-otp", otpLimiter, async (req, res) => {
 // mount routers
 app.use("/api/auth", authRoutes);
 app.use("/api/properties", propertiesRouter);
-app.use("/api/bookings", bookingsRouter); // enable when implemented
+app.use("/api/bookings", bookingsRouter);
+app.use("/api/payments", paymentsRouter);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 API listening on http://0.0.0.0:${PORT}`);
