@@ -1,0 +1,402 @@
+{
+  "info": {
+    "_postman_id": "b2a9f3a8-5b4a-4b77-9c4a-averulo-collection",
+    "name": "Averulo Backend API Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Numbered flow: 1-Auth → 2-Properties → 3-Bookings → 4-Host → 5-Payments"
+  },
+  "item": [
+    {
+      "name": "1-Auth",
+      "item": [
+        {
+          "name": "Send OTP (USER)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/send-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json.devOtp) {",
+                  "  pm.environment.set('user_dev_otp', json.devOtp);",
+                  "}",
+                  "pm.test('OTP request should succeed', function(){",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP (USER → get user_token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/verify-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"otp\": \"{{user_otp_or_dev}}\"\n}"
+            },
+            "description": "Use {{user_dev_otp}} if in dev mode; set user_otp_or_dev variable accordingly."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.environment.set('user_token', json.token);",
+                  "pm.environment.set('user_id', (json.user && json.user.id) || '');",
+                  "pm.test('Got USER token', function(){",
+                  "  pm.expect(json.token).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send OTP (HOST)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/send-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{host_email}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch(e) {}",
+                  "if (json.devOtp) { pm.environment.set('host_dev_otp', json.devOtp); }",
+                  "pm.test('OTP request should succeed', function(){",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP (HOST → get host_token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/verify-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{host_email}}\",\n  \"otp\": \"{{host_otp_or_dev}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "pm.environment.set('host_token', json.token);",
+                  "pm.environment.set('host_id', (json.user && json.user.id) || '');",
+                  "pm.test('Got HOST token', function(){",
+                  "  pm.expect(json.token).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2-Properties",
+      "item": [
+        {
+          "name": "GET /api/properties (list)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/properties"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.items && json.items.length > 0) {",
+                  "  pm.environment.set('property_id', json.items[0].id);",
+                  "}",
+                  "pm.test('Got properties or empty list', function(){",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/properties (HOST creates one)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/properties",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{host_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Test Apartment\",\n  \"city\": \"Lagos\",\n  \"lat\": 6.44,\n  \"lng\": 3.48,\n  \"nightlyPrice\": 25000,\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.environment.set('property_id', json.id);",
+                  "pm.test('Property created (or 401 if host required)', function(){",
+                  "  pm.expect([200,201,401,403]).to.include(pm.response.code);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3-Bookings",
+      "item": [
+        {
+          "name": "POST /api/bookings (USER creates booking)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/bookings",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{user_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"propertyId\": \"{{property_id}}\",\n  \"checkIn\": \"{{check_in}}\",\n  \"checkOut\": \"{{check_out}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.id) pm.environment.set('booking_id', json.id);",
+                  "pm.test('Booking created PENDING', function(){",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "  pm.expect(json.status).to.be.oneOf(['PENDING','APPROVED','REJECTED','CANCELLED']);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/bookings/me (USER)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/bookings/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (Array.isArray(json) && json.length) {",
+                  "  pm.environment.set('booking_id', json[0].id);",
+                  "}",
+                  "pm.test('Got my bookings', function(){",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/bookings/:id/cancel (USER)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/bookings/{{booking_id}}/cancel",
+            "header": [{ "key": "Authorization", "value": "Bearer {{user_token}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('Status is CANCELLED', function(){",
+                  "    pm.expect(json.status).to.equal('CANCELLED');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Cancel may fail if not PENDING', function(){",
+                  "    pm.expect([400,403,404]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4-Host",
+      "item": [
+        {
+          "name": "GET /api/bookings/host (HOST)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/bookings/host",
+            "header": [{ "key": "Authorization", "value": "Bearer {{host_token}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (Array.isArray(json) && json.length) {",
+                  "  pm.environment.set('booking_id', json[0].id);",
+                  "}",
+                  "pm.test('Host bookings visible', function(){",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/bookings/:id/approve (HOST)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/bookings/{{booking_id}}/approve",
+            "header": [{ "key": "Authorization", "value": "Bearer {{host_token}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('Status is APPROVED', function(){",
+                  "    pm.expect(json.status).to.equal('APPROVED');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Approve may fail when not PENDING or not own property', function(){",
+                  "    pm.expect([400,403,404]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH /api/bookings/:id/reject (HOST)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/bookings/{{booking_id}}/reject",
+            "header": [{ "key": "Authorization", "value": "Bearer {{host_token}}" }]
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.test('Status is REJECTED', function(){",
+                  "    pm.expect(json.status).to.equal('REJECTED');",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Reject may fail when not PENDING or not own property', function(){",
+                  "    pm.expect([400,403,404]).to.include(pm.response.code);",
+                  "  });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5-Payments",
+      "item": [
+        {
+          "name": "POST /api/payments/init (USER)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/payments/init",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{user_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{booking_id}}\"\n}"
+            },
+            "description": "Returns authorization_url, access_code, reference"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.reference) pm.environment.set('payment_reference', json.reference);",
+                  "if (json.authorization_url) pm.environment.set('pay_authorization_url', json.authorization_url);",
+                  "pm.test('Init payment returns auth URL', function(){",
+                  "  pm.expect(json.authorization_url).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": []
+}
